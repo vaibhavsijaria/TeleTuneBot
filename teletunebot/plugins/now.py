@@ -9,18 +9,20 @@ from pyrogram.types import (Message, InlineQuery, InlineQueryResultCachedPhoto,I
 
 from teletunebot.helper.mongodb import get_collection
 from teletunebot.helper.make_img import make_img
+from teletunebot.helper.buttons import playback_control
+from teletunebot.helper.spotifyclient import auth_manager,spot_client
 from teletunebot.helper.filters import sudo_users_filter,spotify_now_filter,spotify_auth_filter
 from teletunebot.config import (spotify_client_id,spotify_client_secret,
                               spotify_redirect_uri,log_channel)
 
 
-scope = ['user-read-playback-state']
+# scope = ['user-read-playback-state']
 
-auth_manager = SpotifyOAuth(client_id=spotify_client_id,
-                            client_secret=spotify_client_secret,
-                            redirect_uri=spotify_redirect_uri,
-                            open_browser=False,
-                            scope=scope)
+# auth_manager = SpotifyOAuth(client_id=spotify_client_id,
+#                             client_secret=spotify_client_secret,
+#                             redirect_uri=spotify_redirect_uri,
+#                             open_browser=False,
+#                             scope=scope)
 
 @Client.on_message(filters.command('register'))
 async def spot_reg(client: Client,msg: Message):
@@ -46,23 +48,23 @@ async def spot_auth(client: Client, msg:Message):
 @Client.on_message(filters.command('now'))
 async def spotify_now(client,message: Message):
     await message.reply_chat_action(action=enums.ChatAction.TYPING)
-    sp = await spot_client(message)
+    sp = await spot_client(user=message)
     if sp:
         playback = await get_playback(sp)
         if not playback:
             await message.reply("You are not playing anything!")
         else:
-            await make_img(playback,message.chat.username)
+            await make_img(playback,message.from_user.username)
             await message.reply_photo(photo='downloads/status.jpg',reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
                     'Listen on Spotify',url=playback['track_url']
-                )]
+                )],playback_control
             ]))
-        os.remove('downloads/status.jpg')
+            os.remove('downloads/status.jpg')
 
 @Client.on_inline_query(spotify_now_filter)
 async def spotify_now_inline(client: Client,query: InlineQuery):
-    sp = await spot_client(query)
+    sp = await spot_client(user=query)
     if sp:
         playback = await get_playback(sp)
         if not playback:
@@ -78,37 +80,39 @@ async def spotify_now_inline(client: Client,query: InlineQuery):
             await photo.delete()
             await query.answer(
                 results=[
-                    InlineQueryResultCachedPhoto(photo_file_id=photo.photo.file_id,reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
-                    'Listen on Spotify',url=playback['track_url']
-                    )]]))],
+                    InlineQueryResultCachedPhoto(photo_file_id=photo.photo.file_id,reply_markup=
+                                                 InlineKeyboardMarkup([[
+                                                     InlineKeyboardButton(
+                                                        'Listen on Spotify',url=playback['track_url']
+                                                        )],playback_control]))],
                 is_personal=True,
                 cache_time=10
             )
             os.remove('downloads/status.jpg')
 
-async def spot_client(user: Union[Message,InlineQuery]):
+# async def spot_client(user: Union[Message,InlineQuery]):
     
-    collection = get_collection('teletunebot','spotcreds')
-    refresh_token = await collection.find_one({'_id':user.from_user.id})
-    if refresh_token:
-        refresh_token = refresh_token['refresh_token']
-    else:
-        if isinstance(user,InlineQuery):
-            await user.answer(
-                results=[
-                    InlineQueryResultArticle(title='Link you spotify account in dm!',
-                                            input_message_content=InputTextMessageContent("Link you spotify account using /register in dm!"))
-                ]
-            )
-            return None
-        elif isinstance(user,Message):
-            await user.reply('Link you spotify account using /register')
-            return None
+#     collection = get_collection('teletunebot','spotcreds')
+#     refresh_token = await collection.find_one({'_id':user.from_user.id})
+#     if refresh_token:
+#         refresh_token = refresh_token['refresh_token']
+#     else:
+#         if isinstance(user,InlineQuery):
+#             await user.answer(
+#                 results=[
+#                     InlineQueryResultArticle(title='Link you spotify account in dm!',
+#                                             input_message_content=InputTextMessageContent("Link you spotify account using /register in dm!"))
+#                 ]
+#             )
+#             return None
+#         elif isinstance(user,Message):
+#             await user.reply('Link you spotify account using /register')
+#             return None
 
-    access_token = auth_manager.refresh_access_token(refresh_token=refresh_token)
-    return spotipy.Spotify(
-        auth=access_token['access_token'], auth_manager=auth_manager
-    )
+#     access_token = auth_manager.refresh_access_token(refresh_token=refresh_token)
+#     return spotipy.Spotify(
+#         auth=access_token['access_token'], auth_manager=auth_manager
+#     )
 
 async def get_playback(sp: spotipy.Spotify):
     playback = sp.current_playback()
